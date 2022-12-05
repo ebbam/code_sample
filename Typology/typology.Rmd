@@ -1,0 +1,202 @@
+---
+date: "`r Sys.Date()`"
+author: Ebba Mark
+title: "Typology Work New"
+output: 
+  html_document:
+    theme: "lumen"
+    code_download: true
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    number_sections: true
+    df_print: paged
+knit: (function(inputFile, encoding) { 
+  rmarkdown::render(inputFile, 
+  encoding = encoding, 
+  output_format = "html_document", 
+  output_dir = here::here("output")) 
+  })
+---
+  
+# Set-up
+  
+```{r, echo=FALSE}
+knitr::opts_chunk$set(comment = NA, echo = TRUE, eval = TRUE, 
+                      warning = FALSE, message = FALSE, 
+                      fig.width = 6, fig.height = 4)
+```
+
+# Libraries
+```{r, message = FALSE, include = FALSE}
+rm(list = ls())
+
+# core libraries
+library(tidyverse)
+library(readxl)
+library(here)
+library(fixest)
+library(stargazer)
+library(usmap)
+library(ggplot2)
+library(viridis)
+library(factoextra)
+library(fmsb)
+library(sf)
+
+library(conflicted)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("select", "dplyr")
+```
+
+# Data
+```{r,  echo=FALSE}
+
+coal_emp <- read_excel(here("allcomp_brief.xlsx"))
+typ_us <- read_excel(here("typ_total_us.xlsx")) %>% select("fips","RUC_2013","POPESTIMATE2019", 
+                            "ed_over_25_bachelor_or_higher", "med_earnings",
+                            "lfpr_20_64_female", "diversity_index")
+typ_coal <- typ_us %>% 
+  subset(fips %in% c(coal_emp$fips[which(coal_emp$active_mines != 0 & coal_emp$year == 2019)], 
+                     "51195", "51720")) %>% 
+  data.frame(row.names = 1)
+
+scaled_typ <- scale(typ_coal)
+
+# Creates typology sheet using coal counties as identified in regression work
+# final_cc has combined statistical area of Wise and Norton (fips: 51955) but 
+# demographic characteristics are divided into Wise (fips: 51195) and Norton (fips: 51720)
+
+```
+
+# Analysis
+```{r}
+# Clustering on 251 coal counties claiming analysed in regression section
+# Indicates optimal clusters between 2-4
+fviz_nbclust(scaled_typ, hcut, method = "wss") +
+labs(title= NULL)
+
+res_k3 <- eclust(scaled_typ, k = 3,  "hclust")
+
+# Create table of cluster characteristics
+cc_output <- as.data.frame(aggregate(typ_coal, by=list(cluster=res_k3$cluster), mean)) %>%
+  cbind(res_k3$size) %>%
+  arrange(RUC_2013) %>% t %>% data.frame %>%
+  setNames(c("Type 1", "Type 2", "Type 3")) %>% 
+  cbind("US Average" = t(summarize(typ_us, cluster = "us_total", mean(RUC_2013),
+                                   mean(POPESTIMATE2019),mean(ed_over_25_bachelor_or_higher), 
+                                   mean(med_earnings), mean(lfpr_20_64_female), 
+                                   mean(diversity_index, na.rm = TRUE), nrow(typ_us))))
+
+cc_output[-1,] %>% data.frame %>% 
+  magrittr::set_rownames(c("2013 Rural-Urban Code","Population Size",
+                             "Educational Attainment: Bachelor's Degree or Higher %; aged 25-64",
+                             "Median Earnings USD","Female Labour Force Participation %; aged 25-64",
+                             "Chmura Diversity Index", "Number of counties")) %>% 
+  stargazer(., digits = 1, 
+          notes = "* The number of coal counties included in the typology (252) 
+          differs from the number identified in the econometric analysis (251) 
+          because Wise County, Virginia and Norton City, Virginia  are considered
+          separately by the various entities reporting data for the typology 
+          characteristics. They are combined into one county area by the Bureau 
+          of Economic Analysis whose method was used as the standard used for 
+          the econometric analysis.", summary = FALSE)
+
+
+```
+# Radar plot
+```{r}
+
+create_ms <- function(df){
+  minsa <- df %>% summarise_at(2:5, min, na.rm = TRUE) %>% 
+  cbind(., summarise_at(df, c(1,6), max, na.rm = TRUE)) %>% 
+  as.data.frame  %>% `rownames<-`(paste("min", nrow(df), sep = "_"))
+  
+  maxsa <- df %>% summarise_at(2:5, max, na.rm = TRUE) %>% 
+  cbind(., summarise_at(df, c(1,6), min, na.rm = TRUE)) %>% 
+  as.data.frame  %>% `rownames<-`(paste("max", nrow(df), sep = "_"))
+  
+  return(rbind(maxsa, minsa))
+}
+
+plot_radar <- function(rad_df){
+  radarchart(rad_df, 
+           vlabels = c("Population     \n Size     ",
+                       "Educational             \nAttainment             ",
+                       "Median\nEarnings", "     Female\n     LFPR", 
+                       "Urban",
+                                     "          Economic\n          Diversity"), 
+           pcol = viridis(3), vlcex = 0.9, plty = 1, plwd = 3, cglcol = "gray10")
+legend(
+  x = "bottom", legend = colnames(cc_output[,-4]), horiz = TRUE,
+  bty = "n", pch = 20, col = viridis(3),
+  text.col = "black", cex = 1, pt.cex = 2, inset = c(0,-.3), xpd = TRUE
+  )
+}
+
+cc_radar <- cc_output[2:7,1:3] %>%  t %>% as.data.frame %>% rbind(create_ms(typ_us[2:7]), create_ms(typ_coal),.)
+plot_radar(cc_radar[3:7,])
+plot_radar(cc_radar[-c(3:4),])
+
+```
+
+
+
+```{r}
+lut <- data.frame(a = c(1,2,3), b = c(3,1,2))
+
+type_map <- as.data.frame(res_k3$cluster) %>% 
+  data.frame(fips = row.names(.), type = res_k3$cluster) %>% 
+  select(fips, type) %>% mutate(type = lut$b[a = type]) %>%
+  mutate(type = as.factor(type)) %>% 
+  mutate(GEOID = fips)
+
+coalfields <- read_sf(dsn = here(""), layer = "CoalFieldsUS") %>% 
+  subset(PROVINCE != "Alaska")
+
+counties <- read_sf(dsn = here(""), layer = "cb_2018_us_county_20m") %>% 
+  subset(STATEFP != "02" & STATEFP != "15" & STATEFP != "72") %>% 
+  merge(., type_map, by = "GEOID", all.x = TRUE)
+
+mines_layer <- subset(counties, !is.na(type))
+
+plot_usmap(data = type_map, values = "type", regions = "counties", col = "gray90", size = 0.04, exclude = c("AK", "HI" )) + 
+  scale_fill_viridis_d(name = "County Type", labels = c("Type 1", "Type 2", "Type 3", "No active mines 2002-2019"), na.value = "gray80") +
+    theme(panel.background = element_rect(color = "white", fill = "white"),
+          plot.title = element_text(face = "bold"), legend.background=element_blank())
+
+ggplot() + 
+  geom_sf(data = coalfields, colour = NA, fill = alpha("lightsteelblue", 0.5), size = 1) +
+  geom_sf(data = counties, colour = "grey", size = 0.04, mapping = aes(fill = type)) +
+  geom_sf(fill = "transparent", color = "grey50", size = 0.2, 
+           data = counties %>% summarise()) +
+  scale_fill_viridis_d(name = "County Type", labels = c("Type 1", "Type 2", "Type 3", "No active mines 2002-2019"), na.value = alpha("grey",0.2))+
+  theme(panel.background = element_rect(color = "white", fill = "white"),
+          plot.title = element_text(face = "bold"), legend.background=element_blank())+
+  coord_sf(datum = NA)
+
+
+```
+
+```{r}
+
+
+```
+
+
+```{r}
+
+coal_emp %>% feols(diff_uer ~ mines_diff + lag_diff + lag_diff2 + diff_log_realgdp_pc | fips + year, ., se = 'twoway')
+
+types <- rbind(type_map, c("51955", 2, "51955"))
+coal_emp <- merge(coal_emp, types, by = "fips")
+
+for(i in 1:3){
+  coal_emp %>% filter(type ==i) %>% feols(diff_uer ~ mines_diff + lag_diff + 
+                                             lag_diff2 + diff_log_realgdp_pc | 
+                                             fips + year, ., se = 'twoway') %>% assign(paste0("model_type", i), ., .GlobalEnv)
+}
+
+
+```
+
