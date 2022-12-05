@@ -1,0 +1,595 @@
+---
+title: "Tabset RMarkdown Template"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    dev: ragg_png
+---
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 3000)
+```
+
+```{css, echo=FALSE}
+pre {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 16, fig.height = 8)
+
+rm(list = ls())
+library(tidyverse)
+library(gets)
+library(getspanel)
+library(here)
+library(grid)
+library(gridExtra)
+library(conflicted)
+library(doParallel)
+library(viridis)
+library(knitr)
+library(parameters)
+library(pander)
+
+conflict_prefer("filter", "dplyr")
+conflict_prefer("first", "dplyr")
+
+```
+
+# Introduction
+The following document demonstrates manual and automatic tabsetting to display multple model results more efficiently. 
+
+It does so by defining the following functions:
+```{r, eval = FALSE}
+gen_p(df, results = TRUE) # Displays plot.isatpanel, plot_grid.isatpanel, and raw estimation results for each model in a passed data frame of models.
+
+convert(mod) # Converts a data frame of models into the input data for plot_grid.isatpanel. Used to display overview of multiple models of the same outcome variable. Used in plot_comp.
+
+plot_comp(mod, panel = "country", na.rm = FALSE) # Displays an overview of multiple models of same outcome variable grouped by model or country. Default grouping is by country.
+
+convert_mult(mod) # Converts a data frame of models into the input data for plot_grid.isatpanel. Used to display overview of multiple models of the different outcome variables for one country. Used in plot_country (and plot_country2).
+
+plot_country(cmod, country, na.rm = FALSE) # Displays an overview of multiple models of multiple outcome variables for one country.
+```
+
+Additional functions:
+```{r, eval = FALSE}
+
+f() # Used to define cleaner x-axis breaks in gen_p().
+
+plot_country2() # Similar to plot_country() but uses a different ggplot method. User needs to specify number of outcome variables which gives less flexibility.
+
+```
+
+
+```{r funs, echo = FALSE}
+# Plotting functions
+
+f <- function(k) {
+        step <- k
+        function(y) seq(floor(min(y)), ceiling(max(y)), by = step)
+}
+
+# Arranges result plots (plot and plot_grid) and prints model results
+# Option to suppress model results using results = FALSE is required for automatic tabsetting.
+gen_p <- function(df, results = TRUE){
+  if(nrow(df) == 0){return("Empty data frame. Model likely not run.")}else{
+    for(i in 1:nrow(df)){
+      mt <- paste0(df$country_sample[i], " (", df$year_range[i],")", "; p.value: ",df$p_val[i],  "; AR: ",df$ar[i])
+      st <- paste0("Formula: ", df$form[i])
+      
+    res <- df %>% slice(i) %>% pull(is) %>% first
+  
+    pl <- res %>% 
+      plot(zero_line = FALSE) +
+        ggtitle(label = mt, subtitle = st) +
+      scale_x_continuous(breaks = f(10))
+    
+    pg <- res %>%
+      plot_grid() +
+      ggtitle(label = mt, subtitle = st)
+    grid.arrange(pl, pg, ncol = 2)
+
+    if(results == TRUE){
+        print(st)
+        print(mt)
+        print(res)
+      }
+    }
+  }
+}
+
+```
+
+## Overview: Emissions Data {.tabset}
+
+The document uses the example data from EUJRC and Moritz' [getspanel vignette](https://moritzschwarz.org/getspanel/).
+
+```{r data}
+#Loading data:
+
+EU15 <- c("Austria", "Belgium", "Germany", "Denmark", "Spain", "Finland", 
+          "France",  "Greece", "Ireland", "Italy", "Luxembourg", "Netherlands",
+          "Portugal",  "Sweden", "United Kingdom")
+
+data(EU_emissions_road)
+
+em_dat <- EU_emissions_road %>% 
+  tibble %>% 
+  filter(country %in% EU15 & year >= 1990) %>% 
+  mutate(gdp_sq = gdp^2,
+         lgdp_sq = lgdp^2)
+
+```
+
+Below, an overview of road transport emissions by country.
+
+```{r overview plots, warning = FALSE, fig.height=8, fig.width = 10}
+
+em_dat %>%
+  select(country, year, transport.emissions) %>%
+  ggplot(aes(x = year, y = transport.emissions, color = country)) +
+  geom_line() +
+  facet_wrap(~country, scales = "free") +
+  scale_color_viridis(discrete = TRUE) +
+  labs(x = "Year", y = "Emissions", title = "Emissions from Road Transport")+
+  theme_minimal() +
+  theme(legend.position = "none", strip.background = element_rect(fill = alpha("aliceblue", 0.5)))
+
+```
+
+```{r, echo = FALSE}
+
+# Functional forms to execute
+# forms <- c("Model 1" = "ltransport.emissions ~ lgdp + lpop",
+#            "Model 2" = "ltransport.emissions ~ lgdp + lgdp_sq + lpop")
+# 
+# cl <- makeCluster(6)
+# registerDoParallel(cl)
+# 
+# mods <- foreach(n = names(forms), .combine = rbind, .packages = c('tidyverse', 'getspanel')) %:%
+#  foreach(a = c(0,1), .combine = rbind) %:%
+#     foreach(yr = c(1990, 2000), .combine = rbind) %dopar% {
+#       dat <- em_dat %>% filter(year >= yr)
+#         is <- isatpanel(data = dat,
+#                    formula = as.formula(forms[[n]]),
+#                    index = c("country","year"),
+#                    effect = "twoways",
+#                    fesis = TRUE,
+#                    p.val = 0.01,
+#                    ar = a)
+#             mods = tibble(form = forms[[n]],
+#                             mod_name = n,
+#                             country_sample = "EU15",
+#                             year_range = paste0(min(dat$year),":",max(dat$year)),
+#                             p_val = 0.01,
+#                             is = list(is),
+#                             iis = TRUE,
+#                             ar = a)
+#     }
+# 
+# saveRDS(mods, here("Templates/eu_road_basic_models.RDS"))
+
+mods <- readRDS(here("Templates/eu_road_basic_models.RDS"))
+
+```
+
+
+## Tabset Multiple Results Manually {.tabset}
+
+Tabset manually by setting {.tabset} at the level above where you want your tabs to appear. Each code chunk to be displayed as a tab requires one more # sign in its title but no {.tabset} if it is the last level of tabs. You can specify which tab you wish to be displayed automatically by specifying {.active} in its chunk title.
+
+Model results used below are run using isatpanel. The RMarkdown script includes the code (commented out) used to run the models but uses the saved dataframes of model results to reduce run time of RMarkdown document.
+
+### Model 1 {.tabset}
+#### 1990-2018 {.tabset}
+##### AR = 0
+```{r, echo = FALSE}
+
+mods %>% filter(mod_name == "Model 1" & year_range == "1990:2018" & ar == 0) %>% gen_p(.)
+
+```
+
+##### AR = 1
+```{r, echo = FALSE}
+
+mods %>% filter(mod_name == "Model 1" & year_range == "1990:2018" & ar == 1) %>% gen_p(.)
+
+```
+
+#### 2000-2018 {.tabset}
+##### AR = 0
+```{r, echo = FALSE}
+
+mods %>% filter(mod_name == "Model 1" & year_range == "2000:2018" & ar == 0) %>% gen_p(.)
+
+```
+
+##### AR = 1
+```{r, echo = FALSE}
+
+mods %>% filter(mod_name == "Model 1" & year_range == "2000:2018" & ar == 1) %>% gen_p(.)
+
+```
+
+### Model 2 {.tabset}
+#### 1990-2018 {.tabset}
+##### AR = 0
+```{r, echo = FALSE}
+
+mods %>% filter(mod_name == "Model 2" & year_range == "1990:2018" & ar == 0) %>% gen_p(.)
+
+```
+
+##### AR = 1
+```{r, echo = FALSE}
+
+mods %>% filter(mod_name == "Model 2" & year_range == "1990:2018" & ar == 1) %>% gen_p(.)
+
+```
+
+#### 2000-2018 {.tabset}
+##### AR = 0
+```{r, echo = FALSE}
+
+mods %>% filter(mod_name == "Model 2" & year_range == "2000:2018" & ar == 0) %>% gen_p(.)
+
+```
+
+##### AR = 1
+```{r, echo = FALSE}
+
+mods %>% filter(mod_name == "Model 2" & year_range == "2000:2018" & ar == 1) %>% gen_p(.)
+
+```
+
+## Tabset Multiple Results Automatically {.tabset}
+
+The below requires a bit more manipulation of the estimation results display than in the manual implementation as RMarkdown cannot handle both "asis" output and verbatim text output in one chunk (when rendered within a for loop). I have provided two options here. First, using indents to trick knitr into reading text output as verbatim code rather than raw RMarkdown text.
+
+I use purrr::iwalk in both options to iterate over the model dataframe. Another method is outlined [here](https://interludeone.com/posts/2022-03-04-programmatically-generate-tabs-in-rmarkdown/).
+
+```{r auto tabs, echo = FALSE, results = 'asis'}
+
+mods %>%
+      dplyr::group_split(mod_name) %>%
+      purrr::iwalk(.,~{
+        name <- unique(.x$mod_name)
+        cat('### ', name, '{.tabset}   \n')
+        for(y in unique(.x$year_range)){
+          cat('#### ', y, '{.tabset}   \n')
+          for(a in unique(.x$ar)){
+            cat('##### AR = ', a, '   \n')
+            tmp <- filter(.x, year_range == y & ar == a)
+            for(r in nrow(tmp)){
+              tmp %>% slice(r) %>% gen_p(., results = FALSE)
+             t <- tmp %>% slice(r) %>% pull(is) %>% first
+             p <- invisible(capture.output(t$isatpanel.result))
+             
+             # Spacing included to trick knitr into reading as verbatim code.
+             cat(c("                         \n", paste("                  ", p,'     \n')))
+            }
+              cat('\n')
+              cat('\n')
+            }
+          cat('\n')
+          cat('\n')
+          }
+        cat('\n')
+        cat('\n')
+      })
+
+
+```
+
+## Tabset Multiple Results Automatically with DataTable {.tabset}
+The second option generates a results table using DT::datatable instead. To display the header and footer information I used the same spacing method as in the previous chunk. This could certainly be improved.
+
+```{r, echo = FALSE, include = FALSE}
+# You need this code to conduct the dependencies in the automated tabsetting in the chunk below!
+DT::datatable(matrix())
+```
+
+```{r, echo = FALSE, results = 'asis', verbatim = TRUE}
+
+mods %>%
+  dplyr::group_split(mod_name) %>%
+  purrr::iwalk(.,~{
+    name <- unique(.x$mod_name)
+    cat('### ', name, '{.tabset}   \n')
+    for(y in unique(.x$year_range)){
+      cat('#### ', y, '{.tabset}   \n')
+      for(a in unique(.x$ar)){
+        cat('##### AR = ', a, '   \n')
+        tmp <- filter(.x, year_range == y & ar == a)
+        for(r in nrow(tmp)){
+          tmp %>% slice(r) %>% gen_p(., results = FALSE)
+          
+          t <- tmp %>% slice(r) %>% pull(is) %>% first
+          p <- invisible(capture.output(t$isatpanel.result))
+          
+          cat(c("                         \n", paste("                  ", p[c(1:7)],'     \n')))
+          # Required to render estimation results as HTML table within an 'asis' Rmarkdown chunk
+          invisible(capture.output(tbl <- t$isatpanel.result$mean.results %>% printCoefmat %>%
+                                     mutate(sig = gsub(" ", "", add.significance.stars(`p-value`)))))
+          cat(knitr::knit_print(DT::datatable(tbl, options = list(dom = "t", scrollY = '300px', paging = FALSE))))
+          
+          cat(paste("                  ", p[-c(1:(nrow(tbl)+12))], '     \n'))
+        }
+        cat('\n')
+        cat('\n')
+      }
+      cat('\n')
+      cat('\n')
+    }
+    cat('\n')
+    cat('\n')
+  })
+
+
+```
+
+
+## Model Overview {.tabset}
+Two possible methods of generating the model comparison plot:
+1. For simplicity here, I use ggplot_build() which returns the data underlying a ggplot object.
+2. Use the code in getspanel to generate the same dataframes as used in plot_grid. Ideally, if implemented in getspanel this would be the approach.
+
+*Warning:* I have yet to implement exhaustive warnings for incorrectly passed data frames (ie. no duplicate identifiers). Take care to ensure the df passed has unique identifying information (model name as "model" and dependent variable as "dep", if applicable).
+
+```{r, echo = FALSE}
+
+# Specify a column titled "model" with desired model label as string/character
+mods$model <- paste0(mods$mod_name, ": AR", mods$ar)
+
+# Data manipulation function: extracts plot_grid input data from getspanel
+# mod = df of models as created above. Minimum requirement is 2 columns (is =  isatpanel object, model = model name)
+# na.rm removes countries for which NO model reveals a break/effect
+convert <- function(mod){
+  if(nrow(mod) == 0){
+    print("No models to plot.")
+  }else{
+    c_mods <- tibble()
+    for(m in 1:nrow(mod)){
+      mod_name <- mod %>% slice(m) %>% pull(model)
+      # Currently, this extracts the data used to build the plot_grid in isatpanel; not ideal
+      grid_dat <- mod %>% slice(m) %>% pull(is) %>% first %>% plot_grid %>% ggplot_build
+      grid_dat <- grid_dat$plot$data
+      grid_dat$model <- mod_name
+      c_mods <- rbind(c_mods, grid_dat)
+    }
+  }
+  return(c_mods)
+}
+
+```
+
+
+### Model Overview {.tabset}
+```{r, echo = FALSE, fig.height = 14}
+# Plots stacked model overview with option to specify whether to group by country or model. Default is to group by country.
+# Again, careful as I have not yet implemented exhaustive testing and warnings for incorrectly passed dataframes.
+
+plot_comp <- function(mod, panel = "country", na.rm = TRUE){
+  tmp <- convert(mod)
+
+  if(panel == "model"){
+    tmp <- tmp %>% rename(id = model, model = id)
+  }else if(!(panel == "country")){
+    print("Error")
+    break}else{}
+
+  if(na.rm == TRUE){
+    tmp <- tmp %>% group_by(id) %>% filter(!all(is.na(effect)))
+    }
+
+  tmp %>% ggplot(aes(x = time, y = model)) +
+      geom_tile(aes(fill = effect), na.rm = NA) +
+      scale_fill_gradient2(na.value = NA, name = "Effect")+
+      scale_x_continuous(expand = c(0,0)) +
+      scale_y_discrete(expand = c(0,0), limits = rev) +
+      facet_grid(id~.) +
+      theme_bw() +
+      theme(panel.grid = element_blank(),
+            panel.border = element_rect(fill = NA),
+            strip.background = element_blank(),
+            axis.text = element_text(size = 12, color = "black"),
+            strip.text.y = element_text(size = 14, angle = 0)) +
+      labs(x = NULL, y = NULL,title= "Model Overview")
+}
+
+```
+
+#### by country
+```{r, echo = FALSE, fig.height = 14}
+
+# Subsample of models covering time frame 1990:2018
+sample <- mods %>% filter(year_range == "1990:2018")
+
+plot_comp(sample)
+
+```
+
+#### by model
+```{r, echo = FALSE, fig.height = 14}
+
+plot_comp(sample, panel = "model")
+
+```
+
+#### by outcome variable (ind. country) {.tabset}
+
+```{r, echo = FALSE, fig.height = 14}
+# New functional forms to execute in order to compare models with different outcome variables
+
+nforms <- c("Model 1" = "transport.emissions ~ gdp + pop",
+           "Model 2" = "transport.emissions ~ gdp + gdp_sq + lpop")
+```
+
+```{r, echo = FALSE, fig.height = 14}
+# Code for executing models in "Templates/eu_road_nolog_models.RDS"
+# cl <- makeCluster(6)
+# registerDoParallel(cl)
+#
+# nmods <- foreach(n = names(nforms), .combine = rbind, .packages = c('tidyverse', 'getspanel')) %:%
+#  foreach(a = c(0,1), .combine = rbind) %:%
+#     foreach(yr = c(1990, 2000), .combine = rbind) %dopar% {
+#       dat <- em_dat %>% filter(year >= yr)
+#         is <- isatpanel(data = dat,
+#                    formula = as.formula(nforms[[n]]),
+#                    index = c("country","year"),
+#                    effect = "twoways",
+#                    fesis = TRUE,
+#                    p.val = 0.01,
+#                    ar = a)
+#             nmods = tibble(form = nforms[[n]],
+#                             mod_name = n,
+#                             country_sample = "EU15",
+#                             year_range = paste0(min(dat$year),":",max(dat$year)),
+#                             p_val = 0.01,
+#                             is = list(is),
+#                             iis = TRUE,
+#                             ar = a)
+#     }
+
+# saveRDS(nmods, here("Templates/eu_road_nolog_models.RDS"))
+
+```
+
+
+```{r, echo = FALSE, fig.height = 14}
+
+# Combining with model results using non log-transformed variables adding a column that clarifies the dependent variable modeled (dep)
+# Below dataframe tmods has unique identifier pairs: model-dep.
+
+tmods <- readRDS(here("Templates/eu_road_nolog_models.RDS")) %>%
+  mutate(model = paste0(mod_name, ": AR", ar)) %>%
+  rbind(mods) %>%
+  mutate(dep = case_when(grepl("^transport", form) ~ "Emissions",
+                         grepl("ltransport", form) ~ "Log Emissions")) %>%
+  filter(year_range == "1990:2018")
+
+# Similar function as convert but organises w/ respect to multiple outcome variables
+convert_mult <- function(mod){
+  if(nrow(mod) == 0){
+    print("No models to plot.")
+  }else{
+    c_mods <- tibble()
+    for(m in 1:nrow(mod)){
+      mod_name <- mod %>% slice(m) %>% pull(model)
+      dep_name <- mod %>% slice(m) %>% pull(dep)
+      # Currently, this extracts the data used to build the plot_grid in isatpanel
+      grid_dat <- mod %>% slice(m) %>% pull(is) %>% first %>% plot_grid %>% ggplot_build
+      grid_dat <- grid_dat$plot$data
+      grid_dat$model <- mod_name
+      grid_dat$dep <- dep_name
+      c_mods <- rbind(c_mods, grid_dat)
+    }
+  }
+  return(c_mods)
+}
+
+```
+
+
+Currently a messy implementation of a model overview for multiple outcome variables per country.
+
+```{r, echo = FALSE}
+# Remaining tasks:
+# - Align panels in grid.arrange
+# - Attempt to use facet_grid with modifiable scales (attempt final chunk) - not yet automated
+
+# Pass converted data frame (convert_mult)
+
+plot_country <- function(cmod, country, na.rm = FALSE){
+  cmod <- cmod %>% filter(id == country)
+
+  if(na.rm == TRUE){
+    cmod <- cmod %>% group_by(dep) %>% filter(!all(is.na(effect)))
+  }
+  # Replace NAs with 0 value so that cases in which only one model reveals an effect are displayed correctly (limitation of facet_grid)
+  cmod %>% mutate(effect = ifelse(is.na(effect), 0, effect)) %>%
+    group_by(dep) %>%
+    do(gg = {ggplot(., aes(x = time,y = model)) +
+        geom_tile(aes(fill = effect)) +
+        scale_fill_gradient2(na.value = NA, name = "Effect", oob = scales::squish) +
+        scale_x_continuous(expand = c(0,0)) +
+        scale_y_discrete(expand = c(0,0), limits = rev) +
+        facet_grid(dep~.) +
+        theme_bw() +
+        theme(panel.grid = element_blank(),
+              legend.position = "bottom",
+               strip.background = element_blank(),
+               axis.text = element_text(size = 12, color = "black"),
+               strip.text.y = element_text(size = 14)) +
+        labs(x = NULL, y = NULL)
+      }) %>%
+    .$gg %>% arrangeGrob(grobs = .) %>% grid.arrange()
+}
+
+plot_country(convert_mult(tmods), country = "Germany")
+
+```
+
+```{r, echo = FALSE, results = 'asis'}
+
+tmods %>%
+  convert_mult %>%
+      dplyr::group_split(id) %>%
+      purrr::iwalk(.,~{
+        c <- unique(.x$id)
+        if(!all(is.na(.x$effect))){
+          cat('##### ', c, '   \n')
+          plot_country(.x, country = c, na.rm = TRUE)
+          }
+        cat('\n')
+        cat('\n')
+      })
+
+```
+
+```{r, include = FALSE, eval = FALSE}
+
+# An attempt to use facet_grid when extracting models of multiple outcome variables. Requires new scales and manual input for each group...
+
+library(ggnewscale)
+
+plot_country2 <- function(cmod, country, na.rm = FALSE){
+  if(is.null(country)){
+   print("Specify a country argument.")
+   break
+  }else{cmod <- cmod %>% filter(id == country)}
+
+  if(na.rm == TRUE){
+    cmod <- cmod %>% group_by(dep) %>% filter(!all(is.na(effect)))
+  }
+
+ cmod %>%
+   ggplot(aes(x = time, y = model)) +
+     geom_tile(aes(fill = effect), data = ~ subset(., dep == "Log Emissions"), na.rm = NA) +
+     scale_fill_gradient2(na.value = NA, name = "Effect")+
+     scale_x_continuous(expand = c(0,0)) +
+     scale_y_discrete(expand = c(0,0), limits = rev) +
+     new_scale_fill() +
+     geom_tile(aes(fill = effect), data = ~ subset(., dep == "Emissions"), na.rm = NA) +
+     scale_fill_gradient2(na.value = NA, name = "Effect")+
+     scale_x_continuous(expand = c(0,0)) +
+     scale_y_discrete(expand = c(0,0), limits = rev) +
+     facet_grid(dep~.) +
+     theme_bw() +
+     theme(panel.grid = element_blank(),
+           panel.border = element_rect(fill = NA),
+           strip.background = element_blank(),
+           axis.text = element_text(size = 12, color = "black"),
+           strip.text.y = element_text(size = 12)) +
+     labs(x = NULL, y = NULL,title= paste("Model Overview:", country))
+}
+
+plot_country2(convert_mult(tmods), country = "Germany", na.rm = FALSE)
+
+```
+
