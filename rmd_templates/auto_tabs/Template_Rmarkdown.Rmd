@@ -172,9 +172,9 @@ em_dat %>%
 #                             ar = a)
 #     }
 # 
-# saveRDS(mods, here("Templates/eu_road_basic_models.RDS"))
+# saveRDS(mods, here("rmd_templates/auto_tabs/eu_road_basic_models.RDS"))
 
-mods <- readRDS(here("Templates/eu_road_basic_models.RDS"))
+mods <- readRDS(here("rmd_templates/auto_tabs/eu_road_basic_models.RDS"))
 
 ```
 
@@ -431,7 +431,7 @@ nforms <- c("Model 1" = "transport.emissions ~ gdp + pop",
 ```
 
 ```{r, echo = FALSE, fig.height = 14}
-# Code for executing models in "Templates/eu_road_nolog_models.RDS"
+# Code for executing models in "rmd_templates/auto_tabs/eu_road_nolog_models.RDS"
 # cl <- makeCluster(6)
 # registerDoParallel(cl)
 #
@@ -456,7 +456,7 @@ nforms <- c("Model 1" = "transport.emissions ~ gdp + pop",
 #                             ar = a)
 #     }
 
-# saveRDS(nmods, here("Templates/eu_road_nolog_models.RDS"))
+# saveRDS(nmods, here("rmd_templates/auto_tabs/eu_road_nolog_models.RDS"))
 
 ```
 
@@ -466,7 +466,7 @@ nforms <- c("Model 1" = "transport.emissions ~ gdp + pop",
 # Combining with model results using non log-transformed variables adding a column that clarifies the dependent variable modeled (dep)
 # Below dataframe tmods has unique identifier pairs: model-dep.
 
-tmods <- readRDS(here("Templates/eu_road_nolog_models.RDS")) %>%
+tmods <- readRDS(here("rmd_templates/auto_tabs/eu_road_nolog_models.RDS")) %>%
   mutate(model = paste0(mod_name, ": AR", ar)) %>%
   rbind(mods) %>%
   mutate(dep = case_when(grepl("^transport", form) ~ "Emissions",
