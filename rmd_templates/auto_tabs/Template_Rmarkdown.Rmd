@@ -41,7 +41,7 @@ conflict_prefer("first", "dplyr")
 ```
 
 # Introduction
-The following document demonstrates manual and automatic tabsetting to display multple model results more efficiently. 
+The following document demonstrates manual and automatic tabsetting to display multiple model results more efficiently. 
 
 It does so by defining the following functions:
 ```{r, eval = FALSE}
@@ -172,9 +172,9 @@ em_dat %>%
 #                             ar = a)
 #     }
 # 
-# saveRDS(mods, here("rmd_templates/auto_tabs/eu_road_basic_models.RDS"))
+# saveRDS(mods, here("eu_road_basic_models.RDS"))
 
-mods <- readRDS(here("rmd_templates/auto_tabs/eu_road_basic_models.RDS"))
+mods <- readRDS(here("eu_road_basic_models.RDS"))
 
 ```
 
@@ -335,9 +335,9 @@ mods %>%
 
 
 ## Model Overview {.tabset}
-Two possible methods of generating the model comparison plot:
-1. For simplicity here, I use ggplot_build() which returns the data underlying a ggplot object.
-2. Use the code in getspanel to generate the same dataframes as used in plot_grid. Ideally, if implemented in getspanel this would be the approach.
+Two possible methods of generating the model comparison plot:         
+1. For simplicity here, I use ggplot_build() which returns the data underlying a ggplot object.          
+2. Use the code in getspanel to generate the same dataframes as used in plot_grid. Ideally, if implemented in getspanel this would be the approach.        
 
 *Warning:* I have yet to implement exhaustive warnings for incorrectly passed data frames (ie. no duplicate identifiers). Take care to ensure the df passed has unique identifying information (model name as "model" and dependent variable as "dep", if applicable).
 
@@ -431,7 +431,7 @@ nforms <- c("Model 1" = "transport.emissions ~ gdp + pop",
 ```
 
 ```{r, echo = FALSE, fig.height = 14}
-# Code for executing models in "rmd_templates/auto_tabs/eu_road_nolog_models.RDS"
+# Code for executing models in "eu_road_nolog_models.RDS"
 # cl <- makeCluster(6)
 # registerDoParallel(cl)
 #
@@ -456,7 +456,7 @@ nforms <- c("Model 1" = "transport.emissions ~ gdp + pop",
 #                             ar = a)
 #     }
 
-# saveRDS(nmods, here("rmd_templates/auto_tabs/eu_road_nolog_models.RDS"))
+# saveRDS(nmods, here("eu_road_nolog_models.RDS"))
 
 ```
 
@@ -466,7 +466,7 @@ nforms <- c("Model 1" = "transport.emissions ~ gdp + pop",
 # Combining with model results using non log-transformed variables adding a column that clarifies the dependent variable modeled (dep)
 # Below dataframe tmods has unique identifier pairs: model-dep.
 
-tmods <- readRDS(here("rmd_templates/auto_tabs/eu_road_nolog_models.RDS")) %>%
+tmods <- readRDS(here("eu_road_nolog_models.RDS")) %>%
   mutate(model = paste0(mod_name, ": AR", ar)) %>%
   rbind(mods) %>%
   mutate(dep = case_when(grepl("^transport", form) ~ "Emissions",
@@ -496,7 +496,7 @@ convert_mult <- function(mod){
 ```
 
 
-Currently a messy implementation of a model overview for multiple outcome variables per country.
+*Note*: Given I have specified na.rm = TRUE in the plot_country function, countries(dependent variables) for which there is no effect found in any of the models do not appear as a tab(panel) below.
 
 ```{r, echo = FALSE}
 # Remaining tasks:
@@ -530,8 +530,6 @@ plot_country <- function(cmod, country, na.rm = FALSE){
       }) %>%
     .$gg %>% arrangeGrob(grobs = .) %>% grid.arrange()
 }
-
-plot_country(convert_mult(tmods), country = "Germany")
 
 ```
 
