@@ -160,7 +160,7 @@ em_dat %>%
 #                    index = c("country","year"),
 #                    effect = "twoways",
 #                    fesis = TRUE,
-#                    p.val = 0.01,
+#                    t.pval = 0.01,
 #                    ar = a)
 #             mods = tibble(form = forms[[n]],
 #                             mod_name = n,
@@ -444,7 +444,7 @@ nforms <- c("Model 1" = "transport.emissions ~ gdp + pop",
 #                    index = c("country","year"),
 #                    effect = "twoways",
 #                    fesis = TRUE,
-#                    p.val = 0.01,
+#                    t.pval = 0.01,
 #                    ar = a)
 #             nmods = tibble(form = nforms[[n]],
 #                             mod_name = n,
